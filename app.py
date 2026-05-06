@@ -1,49 +1,26 @@
 import os
 import json
 from datetime import datetime, timezone, timedelta
-
-ARG = timezone(timedelta(hours=-3))
-from flask import Flask, request, jsonify, render_template, send_file, redirect, url_for, session
+from flask import Flask, request, jsonify, render_template, send_file, redirect, url_for, session, make_response
 from functools import wraps
+import io
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'clave_secreta_cambiar')
+
+ARG = timezone(timedelta(hours=-3))
 
 # ── Configuración ──────────────────────────────────────────
 WEB_USER     = os.environ.get('WEB_USER', 'admin')
 WEB_PASSWORD = os.environ.get('WEB_PASSWORD', 'admin123')
 
-# Carpeta donde se guardan los archivos de cada reloj
-UPLOAD_FOLDER = 'archivos'
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-# Base de datos en memoria (se reinicia al reiniciar el servidor)
-# Para producción se puede usar PostgreSQL
-relojes = {}  # { device_id: { nombre, ultima_actualizacion, archivo } }
-
-# Cargar estado desde archivo JSON si existe
-STATE_FILE = 'state.json'
-
-def load_state():
-    global relojes
-    if os.path.exists(STATE_FILE):
-        try:
-            with open(STATE_FILE, 'r') as f:
-                relojes = json.load(f)
-        except Exception:
-            relojes = {}
-
-def save_state():
-    try:
-        with open(STATE_FILE, 'w') as f:
-            json.dump(relojes, f)
-    except Exception as e:
-        print(f"Error guardando estado: {e}")
-
-load_state()
+# Base de datos en memoria
+# { device_id: { nombre, ultima_actualizacion, contenido } }
+relojes = {}
 
 # ── Login requerido ────────────────────────────────────────
 def login_required(f):
+    from functools import wraps
     @wraps(f)
     def decorated(*args, **kwargs):
         if not session.get('logged_in'):
@@ -77,17 +54,19 @@ def index():
     for device_id, info in relojes.items():
         try:
             ultima = datetime.fromisoformat(info['ultima_actualizacion'])
+            if ultima.tzinfo is None:
+                ultima = ultima.replace(tzinfo=ARG)
             diff = (ahora - ultima).total_seconds()
-            online = diff < 600  # online si actualizó en los últimos 10 minutos
+            online = diff < 600
         except Exception:
             online = False
         lista.append({
             'device_id': device_id,
             'nombre': info.get('nombre', device_id),
             'ultima_actualizacion': info.get('ultima_actualizacion', '---'),
-            'online': online
+            'online': online,
+            'tiene_datos': bool(info.get('contenido'))
         })
-    # Ordenar: online primero
     lista.sort(key=lambda x: x['online'], reverse=True)
     return render_template('index.html', relojes=lista)
 
@@ -105,20 +84,21 @@ def upload():
 
     archivo = request.files['archivo']
     if archivo.filename == '':
-        return jsonify({'error': 'archivo vacío'}), 400
+        return jsonify({'error': 'archivo vacio'}), 400
 
-    # Guardar archivo
-    filename = f"aramis_GN_{device_id}.dat"
-    filepath = os.path.join(UPLOAD_FOLDER, filename)
-    archivo.save(filepath)
+    # Leer contenido del archivo
+    contenido_nuevo = archivo.read().decode('utf-8', errors='replace')
 
-    # Actualizar estado del reloj
+    # Acumular contenido al existente
+    contenido_anterior = relojes.get(device_id, {}).get('contenido', '')
+    contenido_acumulado = contenido_anterior + contenido_nuevo
+
+    # Guardar en memoria
     relojes[device_id] = {
         'nombre': nombre,
         'ultima_actualizacion': datetime.now(ARG).isoformat(),
-        'archivo': filename
+        'contenido': contenido_acumulado
     }
-    save_state()
 
     print(f"[{datetime.now(ARG).strftime('%d/%m/%Y %H:%M:%S')}] Archivo recibido de {nombre} ({device_id})")
     return jsonify({'ok': True, 'mensaje': 'Archivo recibido correctamente'}), 200
@@ -130,23 +110,16 @@ def descargar(device_id):
     if device_id not in relojes:
         return 'Reloj no encontrado', 404
 
-    filename = relojes[device_id].get('archivo')
-    if not filename:
-        return 'Archivo no disponible', 404
+    contenido = relojes[device_id].get('contenido', '')
 
-    filepath = os.path.join(UPLOAD_FOLDER, filename)
-    if not os.path.exists(filepath):
-        return 'Archivo no encontrado en el servidor', 404
+    # Enviar como archivo descargable
+    response = make_response(contenido)
+    response.headers['Content-Disposition'] = f'attachment; filename=aramis_GN_{device_id}.dat'
+    response.headers['Content-Type'] = 'text/plain; charset=utf-8'
 
-    # Enviar el archivo y luego vaciarlo
-    response = send_file(filepath, as_attachment=True, download_name=f'aramis_GN_{device_id}.dat')
-
-    # Poner en cero el archivo después de descargarlo
-    try:
-        open(filepath, 'w').close()
-        print(f"Archivo de {device_id} puesto en cero tras la descarga.")
-    except Exception as e:
-        print(f"Error al vaciar archivo: {e}")
+    # Poner en cero el contenido tras la descarga
+    relojes[device_id]['contenido'] = ''
+    print(f"Archivo de {device_id} descargado y puesto en cero.")
 
     return response
 

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Relojes</title>
+    <meta http-equiv="refresh" content="60">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: Arial, sans-serif;
+            background: #f0f2f5;
+            min-height: 100vh;
+        }
+        header {
+            background: #1a1a2e;
+            color: white;
+            padding: 16px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        header h1 { font-size: 20px; }
+        header span { font-size: 13px; color: #aaa; }
+        .logout {
+            color: #aaa;
+            text-decoration: none;
+            font-size: 13px;
+            border: 1px solid #444;
+            padding: 5px 12px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+        .logout:hover { color: white; border-color: white; }
+        .container { max-width: 900px; margin: 30px auto; padding: 0 20px; }
+        .resumen {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px 25px;
+            flex: 1;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+        }
+        .card .numero { font-size: 36px; font-weight: bold; color: #1a1a2e; }
+        .card .label { font-size: 13px; color: #888; margin-top: 4px; }
+        .card.verde .numero { color: #27ae60; }
+        .card.rojo .numero { color: #e74c3c; }
+        table {
+            width: 100%;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+            border-collapse: collapse;
+        }
+        thead { background: #1a1a2e; color: white; }
+        th { padding: 14px 18px; text-align: left; font-size: 14px; font-weight: normal; }
+        td { padding: 14px 18px; font-size: 14px; border-bottom: 1px solid #f0f0f0; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #fafafa; }
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .online  { background: #d4edda; color: #155724; }
+        .offline { background: #f8d7da; color: #721c24; }
+        .btn-descargar {
+            background: #1a1a2e;
+            color: white;
+            border: none;
+            padding: 7px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 13px;
+            text-decoration: none;
+            display: inline-block;
+            transition: background 0.2s;
+        }
+        .btn-descargar:hover { background: #2d2d5e; }
+        .empty {
+            text-align: center;
+            padding: 60px;
+            color: #aaa;
+        }
+        .fecha { color: #333; }
+        .hora  { color: #555; font-size: 13px; }
+        footer {
+            text-align: center;
+            color: #aaa;
+            font-size: 12px;
+            margin-top: 30px;
+            padding-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🕐 Panel de Relojes</h1>
+        <span>Se actualiza cada 60 segundos</span>
+        <a href="/logout" class="logout">Salir</a>
+    </header>
+
+    <div class="container">
+
+        {% set online_count  = relojes | selectattr('online') | list | length %}
+        {% set offline_count = relojes | rejectattr('online') | list | length %}
+
+        <div class="resumen">
+            <div class="card">
+                <div class="numero">{{ relojes | length }}</div>
+                <div class="label">Total de relojes</div>
+            </div>
+            <div class="card verde">
+                <div class="numero">{{ online_count }}</div>
+                <div class="label">En línea</div>
+            </div>
+            <div class="card rojo">
+                <div class="numero">{{ offline_count }}</div>
+                <div class="label">Fuera de línea</div>
+            </div>
+        </div>
+
+        {% if relojes %}
+        <table>
+            <thead>
+                <tr>
+                    <th>ID Reloj</th>
+                    <th>Nombre / Sucursal</th>
+                    <th>Estado</th>
+                    <th>Última actualización</th>
+                    <th>Archivo</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in relojes %}
+                <tr>
+                    <td><strong>{{ r.device_id }}</strong></td>
+                    <td>{{ r.nombre }}</td>
+                    <td>
+                        {% if r.online %}
+                        <span class="badge online">● En línea</span>
+                        {% else %}
+                        <span class="badge offline">● Fuera de línea</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if r.ultima_actualizacion != '---' %}
+                            {% set partes = r.ultima_actualizacion.split('T') %}
+                            {% set fecha_partes = partes[0].split('-') %}
+                            <span class="fecha">{{ fecha_partes[2] }}/{{ fecha_partes[1] }}/{{ fecha_partes[0] }}</span><br>
+                            <span class="hora">{{ partes[1][:8] if partes|length > 1 else '' }}</span>
+                        {% else %}
+                            <span style="color:#aaa">Sin datos</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="/descargar/{{ r.device_id }}" class="btn-descargar">⬇ Descargar</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty">
+            <p style="font-size:48px">🕐</p>
+            <p style="margin-top:15px">Aún no hay relojes conectados.</p>
+            <p style="margin-top:8px">Cuando el programa Python envíe datos, aparecerán aquí.</p>
+        </div>
+        {% endif %}
+
+        <footer>Panel de Relojes &mdash; Se recarga automáticamente cada 60 segundos</footer>
+    </div>
+</body>
+</html>

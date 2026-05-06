@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Panel de Relojes</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a2e;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .login-box {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            width: 360px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        h2 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #1a1a2e;
+            font-size: 22px;
+        }
+        .icon {
+            text-align: center;
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-size: 14px;
+        }
+        input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 15px;
+            margin-bottom: 18px;
+            outline: none;
+            transition: border 0.2s;
+        }
+        input:focus { border-color: #4a90d9; }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #1a1a2e;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover { background: #2d2d5e; }
+        .error {
+            background: #ffe0e0;
+            color: #c0392b;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-box">
+        <div class="icon">🕐</div>
+        <h2>Panel de Relojes</h2>
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+        <form method="POST">
+            <label>Usuario</label>
+            <input type="text" name="username" autofocus required>
+            <label>Contraseña</label>
+            <input type="password" name="password" required>
+            <button type="submit">Ingresar</button>
+        </form>
+    </div>
+</body>
+</html>

@@ -72,7 +72,7 @@ def logout():
 @app.route('/')
 @login_required
 def index():
-    ahora = datetime.now()
+    ahora = datetime.now(ARG)
     lista = []
     for device_id, info in relojes.items():
         try:
@@ -115,12 +115,12 @@ def upload():
     # Actualizar estado del reloj
     relojes[device_id] = {
         'nombre': nombre,
-        'ultima_actualizacion': datetime.now().isoformat(),
+        'ultima_actualizacion': datetime.now(ARG).isoformat(),
         'archivo': filename
     }
     save_state()
 
-    print(f"[{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] Archivo recibido de {nombre} ({device_id})")
+    print(f"[{datetime.now(ARG).strftime('%d/%m/%Y %H:%M:%S')}] Archivo recibido de {nombre} ({device_id})")
     return jsonify({'ok': True, 'mensaje': 'Archivo recibido correctamente'}), 200
 
 # ── Descargar archivo de un reloj ──────────────────────────
@@ -138,7 +138,17 @@ def descargar(device_id):
     if not os.path.exists(filepath):
         return 'Archivo no encontrado en el servidor', 404
 
-    return send_file(filepath, as_attachment=True, download_name=f'aramis_GN_{device_id}.dat')
+    # Enviar el archivo y luego vaciarlo
+    response = send_file(filepath, as_attachment=True, download_name=f'aramis_GN_{device_id}.dat')
+
+    # Poner en cero el archivo después de descargarlo
+    try:
+        open(filepath, 'w').close()
+        print(f"Archivo de {device_id} puesto en cero tras la descarga.")
+    except Exception as e:
+        print(f"Error al vaciar archivo: {e}")
+
+    return response
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=5000)

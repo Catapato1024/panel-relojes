@@ -55,7 +55,12 @@ def logout():
 def index():
     ahora = datetime.now(ARG)
     lista = []
-    for device_id, info in relojes.items():
+
+    # Unir relojes conocidos + relojes con huellas pendientes
+    todos_ids = set(relojes.keys()) | set(archivos_pendientes.keys())
+
+    for device_id in todos_ids:
+        info = relojes.get(device_id, {})
         try:
             ultima = datetime.fromisoformat(info['ultima_actualizacion'])
             if ultima.tzinfo is None:
@@ -66,13 +71,13 @@ def index():
             online = False
         lista.append({
             'device_id': device_id,
-            'nombre': info.get('nombre', device_id),
+            'nombre': info.get('nombre', f'Reloj {device_id}'),
             'ultima_actualizacion': info.get('ultima_actualizacion', '---'),
             'online': online,
             'tiene_datos': bool(info.get('contenido')),
             'huellas_pendientes': bool(archivos_pendientes.get(device_id))
         })
-    lista.sort(key=lambda x: x['online'], reverse=True)
+    lista.sort(key=lambda x: (x['online'], x['huellas_pendientes']), reverse=True)
     return render_template('index.html', relojes=lista)
 
 # ── API: recibir archivo desde el programa Python ──────────

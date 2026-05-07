@@ -135,6 +135,7 @@
                     <th>ID Reloj</th>
                     <th>Nombre / Sucursal</th>
                     <th>Estado</th>
+                    <th>Huellas</th>
                     <th>Última actualización</th>
                     <th>Archivo</th>
                 </tr>
@@ -149,6 +150,13 @@
                         <span class="badge online">● En línea</span>
                         {% else %}
                         <span class="badge offline">● Fuera de línea</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if r.huellas_pendientes %}
+                        <span class="badge" style="background:#fff3cd;color:#856404;">🖐 Pendientes</span>
+                        {% else %}
+                        <span style="color:#ccc;font-size:12px;">—</span>
                         {% endif %}
                     </td>
                     <td>

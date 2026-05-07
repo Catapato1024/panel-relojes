@@ -18,6 +18,10 @@ WEB_PASSWORD = os.environ.get('WEB_PASSWORD', 'admin123')
 # { device_id: { nombre, ultima_actualizacion, contenido } }
 relojes = {}
 
+# Archivos JSON pendientes por device_id
+# { device_id: contenido_json_string }
+archivos_pendientes = {}
+
 # ── Login requerido ────────────────────────────────────────
 def login_required(f):
     from functools import wraps
@@ -65,7 +69,8 @@ def index():
             'nombre': info.get('nombre', device_id),
             'ultima_actualizacion': info.get('ultima_actualizacion', '---'),
             'online': online,
-            'tiene_datos': bool(info.get('contenido'))
+            'tiene_datos': bool(info.get('contenido')),
+            'huellas_pendientes': bool(archivos_pendientes.get(device_id))
         })
     lista.sort(key=lambda x: x['online'], reverse=True)
     return render_template('index.html', relojes=lista)
@@ -121,6 +126,55 @@ def descargar(device_id):
     relojes[device_id]['contenido'] = ''
     print(f"Archivo de {device_id} descargado y puesto en cero.")
 
+    return response
+
+
+# ── API: subir JSON de usuarios desde programa externo ─────
+@app.route('/api/subir_json', methods=['POST'])
+def subir_json():
+    device_id = request.form.get('device_id')
+    if not device_id:
+        return jsonify({'error': 'device_id requerido'}), 400
+    if 'archivo' not in request.files:
+        return jsonify({'error': 'archivo requerido'}), 400
+
+    archivo = request.files['archivo']
+    contenido = archivo.read().decode('utf-8', errors='replace')
+
+    # Validar que sea JSON válido
+    try:
+        json.loads(contenido)
+    except Exception:
+        return jsonify({'error': 'El archivo no es un JSON válido'}), 400
+
+    archivos_pendientes[device_id] = contenido
+    print(f"JSON subido para device_id {device_id}")
+    return jsonify({'ok': True, 'mensaje': f'JSON guardado para dispositivo {device_id}'}), 200
+
+
+# ── API: consultar si hay JSON pendiente para un device_id ──
+@app.route('/api/consultar_json/<device_id>', methods=['GET'])
+def consultar_json(device_id):
+    if device_id in archivos_pendientes and archivos_pendientes[device_id]:
+        return jsonify({'disponible': True}), 200
+    return jsonify({'disponible': False}), 200
+
+
+# ── API: descargar JSON pendiente ──────────────────────────
+@app.route('/api/descargar_json/<device_id>', methods=['GET'])
+def descargar_json(device_id):
+    if device_id not in archivos_pendientes or not archivos_pendientes[device_id]:
+        return jsonify({'error': 'No hay archivo pendiente'}), 404
+
+    contenido = archivos_pendientes[device_id]
+
+    # Borrar del servidor una vez descargado
+    archivos_pendientes[device_id] = ''
+    print(f"JSON de {device_id} descargado y eliminado del servidor.")
+
+    response = make_response(contenido)
+    response.headers['Content-Disposition'] = f'attachment; filename=users_{device_id}.json'
+    response.headers['Content-Type'] = 'application/json; charset=utf-8'
     return response
 
 if __name__ == '__main__':

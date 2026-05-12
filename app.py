@@ -17,14 +17,34 @@ REDIS_URL   = os.environ.get('UPSTASH_REDIS_REST_URL')
 REDIS_TOKEN = os.environ.get('UPSTASH_REDIS_REST_TOKEN')
 
 # ── Redis helpers ──────────────────────────────────────────
-def redis_get(key):
+REDIS_HEADERS = None
+
+def get_headers():
+    global REDIS_HEADERS
+    if REDIS_HEADERS is None:
+        REDIS_HEADERS = {
+            "Authorization": f"Bearer {REDIS_TOKEN}",
+            "Content-Type": "application/json"
+        }
+    return REDIS_HEADERS
+
+def redis_cmd(*args):
+    """Ejecuta un comando Redis via Upstash REST API."""
     try:
-        r = http_requests.get(
-            f"{REDIS_URL}/get/{key}",
-            headers={"Authorization": f"Bearer {REDIS_TOKEN}"},
+        r = http_requests.post(
+            REDIS_URL,
+            headers=get_headers(),
+            json=list(args),
             timeout=5
         )
-        result = r.json().get('result')
+        return r.json().get('result')
+    except Exception as e:
+        print(f"Redis error: {e}")
+        return None
+
+def redis_get(key):
+    try:
+        result = redis_cmd("GET", key)
         if result:
             return json.loads(result)
         return None
@@ -34,26 +54,23 @@ def redis_get(key):
 
 def redis_set(key, value):
     try:
-        http_requests.post(
-            f"{REDIS_URL}/set/{key}",
-            headers={"Authorization": f"Bearer {REDIS_TOKEN}", "Content-Type": "application/json"},
-            json={"value": json.dumps(value)},
-            timeout=5
-        )
+        redis_cmd("SET", key, json.dumps(value))
     except Exception as e:
         print(f"Redis SET error: {e}")
 
 def redis_keys(pattern):
     try:
-        r = http_requests.get(
-            f"{REDIS_URL}/keys/{pattern}",
-            headers={"Authorization": f"Bearer {REDIS_TOKEN}"},
-            timeout=5
-        )
-        return r.json().get('result', [])
+        result = redis_cmd("KEYS", pattern)
+        return result or []
     except Exception as e:
         print(f"Redis KEYS error: {e}")
         return []
+
+def redis_del(key):
+    try:
+        redis_cmd("DEL", key)
+    except Exception as e:
+        print(f"Redis DEL error: {e}")
 
 def get_reloj(device_id):
     return redis_get(f"reloj:{device_id}") or {}
@@ -68,14 +85,7 @@ def save_pendiente(device_id, contenido):
     redis_set(f"pendiente:{device_id}", contenido)
 
 def del_pendiente(device_id):
-    try:
-        http_requests.get(
-            f"{REDIS_URL}/del/pendiente:{device_id}",
-            headers={"Authorization": f"Bearer {REDIS_TOKEN}"},
-            timeout=5
-        )
-    except Exception as e:
-        print(f"Redis DEL error: {e}")
+    redis_del(f"pendiente:{device_id}")
 
 # ── Login requerido ────────────────────────────────────────
 def login_required(f):

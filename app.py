@@ -132,7 +132,8 @@ def index():
             'device_id': device_id,
             'nombre': info.get('nombre', f'Reloj {device_id}'),
             'ultima_actualizacion': info.get('ultima_actualizacion', '---'),
-            'online': online,
+            'remoto_online': online,
+            'reloj_online': info.get('reloj_online', False),
             'tiene_datos': bool(info.get('contenido')),
             'huellas_pendientes': device_id in pend_ids,
             'tiene_backup': bool(info.get('dat_backup'))
@@ -175,6 +176,7 @@ def upload():
     info['nombre'] = nombre
     info['ultima_actualizacion'] = datetime.now(ARG).isoformat()
     info['contenido'] = contenido_anterior + contenido_nuevo
+    info['reloj_online'] = True
     save_reloj(device_id, info)
 
     print(f"Fichadas recibidas de {nombre} ({device_id})")
@@ -275,6 +277,24 @@ def backup(device_id):
     response.headers['Content-Disposition'] = f'attachment; filename=aramis_{device_id}.dat'
     response.headers['Content-Type'] = 'text/plain; charset=utf-8'
     return response
+
+
+# ── API: estado del reloj ZKTeco ───────────────────────────
+@app.route('/api/estado_reloj', methods=['POST'])
+def estado_reloj():
+    device_id = request.form.get('device_id')
+    nombre    = request.form.get('nombre', device_id)
+    conectado = request.form.get('conectado', '0') == '1'
+    if not device_id:
+        return jsonify({'error': 'device_id requerido'}), 400
+
+    info = get_reloj(device_id)
+    info['nombre'] = nombre
+    info['reloj_online'] = conectado
+    save_reloj(device_id, info)
+
+    print(f"Estado reloj {device_id}: {'conectado' if conectado else 'sin conexion'}")
+    return jsonify({'ok': True}), 200
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=5000)

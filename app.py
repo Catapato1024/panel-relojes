@@ -162,7 +162,10 @@ def ping():
     info['ultimo_ping'] = datetime.now(timezone.utc).isoformat()
     save_reloj(device_id, info)
 
-    print(f"Ping recibido de {nombre} ({device_id})")
+    # Debug
+    verificar = get_reloj(device_id)
+    print(f"Ping guardado. ultimo_ping en Redis: {verificar.get('ultimo_ping')}")
+
     return jsonify({'ok': True}), 200
 
 # ── API: recibir fichadas ──────────────────────────────────

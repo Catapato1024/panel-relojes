@@ -62,11 +62,11 @@ def index():
     for device_id in todos_ids:
         info = relojes.get(device_id, {})
         try:
-            ultima = datetime.fromisoformat(info['ultima_actualizacion'])
-            if ultima.tzinfo is None:
-                ultima = ultima.replace(tzinfo=ARG)
-            diff = (ahora - ultima).total_seconds()
-            online = diff < 600
+            ultimo_ping = datetime.fromisoformat(info['ultimo_ping'])
+            if ultimo_ping.tzinfo is None:
+                ultimo_ping = ultimo_ping.replace(tzinfo=ARG)
+            diff = (ahora - ultimo_ping).total_seconds()
+            online = diff < 120  # 2 minutos
         except Exception:
             online = False
         lista.append({
@@ -75,7 +75,8 @@ def index():
             'ultima_actualizacion': info.get('ultima_actualizacion', '---'),
             'online': online,
             'tiene_datos': bool(info.get('contenido')),
-            'huellas_pendientes': bool(archivos_pendientes.get(device_id))
+            'huellas_pendientes': bool(archivos_pendientes.get(device_id)),
+            'tiene_backup': bool(info.get('dat_backup'))
         })
     lista.sort(key=lambda x: (x['online'], x['huellas_pendientes']), reverse=True)
     return render_template('index.html', relojes=lista)
@@ -182,5 +183,54 @@ def descargar_json(device_id):
     response.headers['Content-Type'] = 'application/json; charset=utf-8'
     return response
 
+
+# ── API: ping desde huellahora ─────────────────────────────
+@app.route('/api/ping', methods=['POST'])
+def ping():
+    device_id = request.form.get('device_id')
+    nombre    = request.form.get('nombre', device_id)
+    if not device_id:
+        return jsonify({'error': 'device_id requerido'}), 400
+
+    if device_id not in relojes:
+        relojes[device_id] = {'nombre': nombre, 'contenido': '', 'ultima_actualizacion': '---'}
+
+    relojes[device_id]['ultimo_ping'] = datetime.now(ARG).isoformat()
+    relojes[device_id]['nombre'] = nombre
+    return jsonify({'ok': True}), 200
+
+
+# ── API: recibir archivo .dat de backup ────────────────────
+@app.route('/api/subir_dat', methods=['POST'])
+def subir_dat():
+    device_id = request.form.get('device_id')
+    if not device_id:
+        return jsonify({'error': 'device_id requerido'}), 400
+    if 'archivo' not in request.files:
+        return jsonify({'error': 'archivo requerido'}), 400
+
+    archivo = request.files['archivo']
+    contenido = archivo.read().decode('utf-8', errors='replace')
+    if device_id not in relojes:
+        relojes[device_id] = {'nombre': device_id, 'contenido': '', 'ultima_actualizacion': '---'}
+    relojes[device_id]['dat_backup'] = contenido
+    print(f"Backup .dat recibido de {device_id}")
+    return jsonify({'ok': True}), 200
+
+
+# ── Descargar backup .dat ──────────────────────────────────
+@app.route('/backup/<device_id>')
+@login_required
+def backup(device_id):
+    if device_id not in relojes:
+        return 'Reloj no encontrado', 404
+    contenido = relojes[device_id].get('dat_backup', '')
+    if not contenido:
+        return 'Sin backup disponible', 404
+    response = make_response(contenido)
+    response.headers['Content-Disposition'] = f'attachment; filename=aramis_{device_id}.dat'
+    response.headers['Content-Type'] = 'text/plain; charset=utf-8'
+    return response
+
 if __name__ == '__main__':
-    app.run(debug=False, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)ost='0.0.0.0', port=5000)

@@ -139,7 +139,7 @@ def index():
             'tiene_backup': bool(info.get('dat_backup'))
         })
 
-    lista.sort(key=lambda x: (x['remoto_online'], x['huellas_pendientes']), reverse=True)
+    lista.sort(key=lambda x: (x['online'], x['huellas_pendientes']), reverse=True)
     return render_template('index.html', relojes=lista)
 
 # ── API: ping ──────────────────────────────────────────────
@@ -297,4 +297,4 @@ def estado_reloj():
     return jsonify({'ok': True}), 200
 
 if __name__ == '__main__':
-    app.run(debug=False, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)='0.0.0.0', port=5000)

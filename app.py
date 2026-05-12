@@ -47,14 +47,17 @@ def redis_get(key):
         result = redis_cmd("GET", key)
         if result is None:
             return None
-        # result puede ser string o ya deserializado
-        if isinstance(result, str):
-            return json.loads(result)
         if isinstance(result, dict):
             return result
+        if isinstance(result, str):
+            try:
+                return json.loads(result)
+            except json.JSONDecodeError as je:
+                print(f"JSON decode error: {je}, raw: {repr(result[:100])}")
+                return None
         return None
     except Exception as e:
-        print(f"Redis GET error: {e} result={result}")
+        print(f"Redis GET error: {e}")
         return None
 
 def redis_set(key, value):
@@ -173,22 +176,13 @@ def ping():
     if not device_id:
         return jsonify({'error': 'device_id requerido'}), 400
 
-    # Debug Redis directo
-    test_dict = {"nombre": "test", "ping": "123"}
-    redis_cmd("SET", "test_dict", json.dumps(test_dict))
-    raw = redis_cmd("GET", "test_dict")
-    print(f"Raw GET result type: {type(raw)}, value: {repr(raw)}")
-
     info = get_reloj(device_id) or {}
     info['nombre'] = nombre
     info['ultimo_ping'] = datetime.now(timezone.utc).isoformat()
     save_reloj(device_id, info)
 
-    # Leer raw para ver qué devuelve
-    raw_reloj = redis_cmd("GET", f"reloj:{device_id}")
-    print(f"Raw reloj GET: type={type(raw_reloj)}, value={repr(raw_reloj)}")
     verificar = get_reloj(device_id)
-    print(f"get_reloj result: {verificar}")
+    print(f"Ping OK - ultimo_ping: {verificar.get('ultimo_ping') if verificar else 'ERROR'}")
 
     return jsonify({'ok': True}), 200
 

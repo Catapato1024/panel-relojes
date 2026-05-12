@@ -110,8 +110,8 @@
 
     <div class="container">
 
-        {% set online_count  = relojes | selectattr('online') | list | length %}
-        {% set offline_count = relojes | rejectattr('online') | list | length %}
+        {% set online_count  = relojes | selectattr('remoto_online') | list | length %}
+        {% set offline_count = relojes | rejectattr('remoto_online') | list | length %}
 
         <div class="resumen">
             <div class="card">
@@ -134,7 +134,8 @@
                 <tr>
                     <th>ID Reloj</th>
                     <th>Nombre / Sucursal</th>
-                    <th>Estado</th>
+                    <th>Remoto</th>
+                    <th>Reloj</th>
                     <th>Huellas</th>
                     <th>Última actualización</th>
                     <th>Archivo</th>
@@ -147,10 +148,17 @@
                     <td><strong>{{ r.device_id }}</strong></td>
                     <td>{{ r.nombre }}</td>
                     <td>
-                        {% if r.online %}
+                        {% if r.remoto_online %}
                         <span class="badge online">● En línea</span>
                         {% else %}
                         <span class="badge offline">● Fuera de línea</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if r.reloj_online %}
+                        <span class="badge online">● Conectado</span>
+                        {% else %}
+                        <span class="badge offline">● Sin conexión</span>
                         {% endif %}
                     </td>
                     <td>

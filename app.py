@@ -62,8 +62,9 @@ def redis_get(key):
 
 def redis_set(key, value):
     try:
-        # Guardar como string JSON
-        redis_cmd("SET", key, json.dumps(value))
+        serialized = json.dumps(value)
+        result = redis_cmd("SET", key, serialized)
+        print(f"redis_set key={key} result={result} len={len(serialized)}")
     except Exception as e:
         print(f"Redis SET error: {e}")
 

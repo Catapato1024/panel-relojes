@@ -1,30 +1,84 @@
 import os
 import json
+import requests as http_requests
 from datetime import datetime, timezone, timedelta
 from flask import Flask, request, jsonify, render_template, send_file, redirect, url_for, session, make_response
 from functools import wraps
-import io
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'clave_secreta_cambiar')
 
 ARG = timezone(timedelta(hours=-3))
 
-# ── Configuración ──────────────────────────────────────────
 WEB_USER     = os.environ.get('WEB_USER', 'admin')
 WEB_PASSWORD = os.environ.get('WEB_PASSWORD', 'admin123')
 
-# Base de datos en memoria
-# { device_id: { nombre, ultima_actualizacion, contenido } }
-relojes = {}
+REDIS_URL   = os.environ.get('UPSTASH_REDIS_REST_URL')
+REDIS_TOKEN = os.environ.get('UPSTASH_REDIS_REST_TOKEN')
 
-# Archivos JSON pendientes por device_id
-# { device_id: contenido_json_string }
-archivos_pendientes = {}
+# ── Redis helpers ──────────────────────────────────────────
+def redis_get(key):
+    try:
+        r = http_requests.get(
+            f"{REDIS_URL}/get/{key}",
+            headers={"Authorization": f"Bearer {REDIS_TOKEN}"},
+            timeout=5
+        )
+        result = r.json().get('result')
+        if result:
+            return json.loads(result)
+        return None
+    except Exception as e:
+        print(f"Redis GET error: {e}")
+        return None
+
+def redis_set(key, value):
+    try:
+        http_requests.post(
+            f"{REDIS_URL}/set/{key}",
+            headers={"Authorization": f"Bearer {REDIS_TOKEN}", "Content-Type": "application/json"},
+            json={"value": json.dumps(value)},
+            timeout=5
+        )
+    except Exception as e:
+        print(f"Redis SET error: {e}")
+
+def redis_keys(pattern):
+    try:
+        r = http_requests.get(
+            f"{REDIS_URL}/keys/{pattern}",
+            headers={"Authorization": f"Bearer {REDIS_TOKEN}"},
+            timeout=5
+        )
+        return r.json().get('result', [])
+    except Exception as e:
+        print(f"Redis KEYS error: {e}")
+        return []
+
+def get_reloj(device_id):
+    return redis_get(f"reloj:{device_id}") or {}
+
+def save_reloj(device_id, data):
+    redis_set(f"reloj:{device_id}", data)
+
+def get_pendiente(device_id):
+    return redis_get(f"pendiente:{device_id}")
+
+def save_pendiente(device_id, contenido):
+    redis_set(f"pendiente:{device_id}", contenido)
+
+def del_pendiente(device_id):
+    try:
+        http_requests.get(
+            f"{REDIS_URL}/del/pendiente:{device_id}",
+            headers={"Authorization": f"Bearer {REDIS_TOKEN}"},
+            timeout=5
+        )
+    except Exception as e:
+        print(f"Redis DEL error: {e}")
 
 # ── Login requerido ────────────────────────────────────────
 def login_required(f):
-    from functools import wraps
     @wraps(f)
     def decorated(*args, **kwargs):
         if not session.get('logged_in'):
@@ -56,86 +110,96 @@ def index():
     ahora = datetime.now(ARG)
     lista = []
 
-    # Unir relojes conocidos + relojes con huellas pendientes
-    todos_ids = set(relojes.keys()) | set(archivos_pendientes.keys())
+    keys = redis_keys('reloj:*')
+    device_ids = set(k.replace('reloj:', '') for k in keys)
+
+    pend_keys = redis_keys('pendiente:*')
+    pend_ids = set(k.replace('pendiente:', '') for k in pend_keys)
+    todos_ids = device_ids | pend_ids
 
     for device_id in todos_ids:
-        info = relojes.get(device_id, {})
+        info = get_reloj(device_id)
         try:
             ultimo_ping = datetime.fromisoformat(info['ultimo_ping'])
             if ultimo_ping.tzinfo is None:
                 ultimo_ping = ultimo_ping.replace(tzinfo=ARG)
             diff = (ahora - ultimo_ping).total_seconds()
-            online = diff < 120  # 2 minutos
+            online = diff < 120
         except Exception:
             online = False
+
         lista.append({
             'device_id': device_id,
             'nombre': info.get('nombre', f'Reloj {device_id}'),
             'ultima_actualizacion': info.get('ultima_actualizacion', '---'),
             'online': online,
             'tiene_datos': bool(info.get('contenido')),
-            'huellas_pendientes': bool(archivos_pendientes.get(device_id)),
+            'huellas_pendientes': device_id in pend_ids,
             'tiene_backup': bool(info.get('dat_backup'))
         })
+
     lista.sort(key=lambda x: (x['online'], x['huellas_pendientes']), reverse=True)
     return render_template('index.html', relojes=lista)
 
-# ── API: recibir archivo desde el programa Python ──────────
+# ── API: ping ──────────────────────────────────────────────
+@app.route('/api/ping', methods=['POST'])
+def ping():
+    device_id = request.form.get('device_id')
+    nombre    = request.form.get('nombre', device_id)
+    if not device_id:
+        return jsonify({'error': 'device_id requerido'}), 400
+
+    info = get_reloj(device_id)
+    info['nombre'] = nombre
+    info['ultimo_ping'] = datetime.now(ARG).isoformat()
+    save_reloj(device_id, info)
+
+    print(f"Ping recibido de {nombre} ({device_id})")
+    return jsonify({'ok': True}), 200
+
+# ── API: recibir fichadas ──────────────────────────────────
 @app.route('/api/upload', methods=['POST'])
 def upload():
     device_id = request.form.get('device_id')
     nombre    = request.form.get('nombre', device_id)
-
     if not device_id:
         return jsonify({'error': 'device_id requerido'}), 400
-
     if 'archivo' not in request.files:
         return jsonify({'error': 'archivo requerido'}), 400
 
     archivo = request.files['archivo']
-    if archivo.filename == '':
-        return jsonify({'error': 'archivo vacio'}), 400
-
-    # Leer contenido del archivo
     contenido_nuevo = archivo.read().decode('utf-8', errors='replace')
 
-    # Acumular contenido al existente
-    contenido_anterior = relojes.get(device_id, {}).get('contenido', '')
-    contenido_acumulado = contenido_anterior + contenido_nuevo
+    info = get_reloj(device_id)
+    contenido_anterior = info.get('contenido', '')
+    info['nombre'] = nombre
+    info['ultima_actualizacion'] = datetime.now(ARG).isoformat()
+    info['contenido'] = contenido_anterior + contenido_nuevo
+    save_reloj(device_id, info)
 
-    # Guardar en memoria
-    relojes[device_id] = {
-        'nombre': nombre,
-        'ultima_actualizacion': datetime.now(ARG).isoformat(),
-        'contenido': contenido_acumulado
-    }
-
-    print(f"[{datetime.now(ARG).strftime('%d/%m/%Y %H:%M:%S')}] Archivo recibido de {nombre} ({device_id})")
+    print(f"Fichadas recibidas de {nombre} ({device_id})")
     return jsonify({'ok': True, 'mensaje': 'Archivo recibido correctamente'}), 200
 
-# ── Descargar archivo de un reloj ──────────────────────────
-@app.route('/descargar/<device_id>')
-@login_required
-def descargar(device_id):
-    if device_id not in relojes:
-        return 'Reloj no encontrado', 404
+# ── API: recibir backup .dat ───────────────────────────────
+@app.route('/api/subir_dat', methods=['POST'])
+def subir_dat():
+    device_id = request.form.get('device_id')
+    if not device_id:
+        return jsonify({'error': 'device_id requerido'}), 400
+    if 'archivo' not in request.files:
+        return jsonify({'error': 'archivo requerido'}), 400
 
-    contenido = relojes[device_id].get('contenido', '')
+    archivo = request.files['archivo']
+    contenido = archivo.read().decode('utf-8', errors='replace')
 
-    # Enviar como archivo descargable
-    response = make_response(contenido)
-    response.headers['Content-Disposition'] = f'attachment; filename=aramis_GN_{device_id}.dat'
-    response.headers['Content-Type'] = 'text/plain; charset=utf-8'
+    info = get_reloj(device_id)
+    info['dat_backup'] = contenido
+    save_reloj(device_id, info)
 
-    # Poner en cero el contenido tras la descarga
-    relojes[device_id]['contenido'] = ''
-    print(f"Archivo de {device_id} descargado y puesto en cero.")
+    print(f"Backup .dat recibido de {device_id}")
+    return jsonify({'ok': True}), 200
 
-    return response
-
-
-# ── API: subir JSON de usuarios desde programa externo ─────
+# ── API: subir JSON de huellas ─────────────────────────────
 @app.route('/api/subir_json', methods=['POST'])
 def subir_json():
     device_id = request.form.get('device_id')
@@ -147,90 +211,70 @@ def subir_json():
     archivo = request.files['archivo']
     contenido = archivo.read().decode('utf-8', errors='replace')
 
-    # Validar que sea JSON válido
     try:
         json.loads(contenido)
     except Exception:
-        return jsonify({'error': 'El archivo no es un JSON válido'}), 400
+        return jsonify({'error': 'JSON inválido'}), 400
 
-    archivos_pendientes[device_id] = contenido
+    save_pendiente(device_id, contenido)
     print(f"JSON subido para device_id {device_id}")
     return jsonify({'ok': True, 'mensaje': f'JSON guardado para dispositivo {device_id}'}), 200
 
-
-# ── API: consultar si hay JSON pendiente para un device_id ──
+# ── API: consultar JSON pendiente ──────────────────────────
 @app.route('/api/consultar_json/<device_id>', methods=['GET'])
 def consultar_json(device_id):
-    if device_id in archivos_pendientes and archivos_pendientes[device_id]:
-        return jsonify({'disponible': True}), 200
-    return jsonify({'disponible': False}), 200
-
+    data = get_pendiente(device_id)
+    return jsonify({'disponible': bool(data)}), 200
 
 # ── API: descargar JSON pendiente ──────────────────────────
 @app.route('/api/descargar_json/<device_id>', methods=['GET'])
 def descargar_json(device_id):
-    if device_id not in archivos_pendientes or not archivos_pendientes[device_id]:
+    contenido = get_pendiente(device_id)
+    if not contenido:
         return jsonify({'error': 'No hay archivo pendiente'}), 404
 
-    contenido = archivos_pendientes[device_id]
-
-    # Borrar del servidor una vez descargado
-    archivos_pendientes[device_id] = ''
-    print(f"JSON de {device_id} descargado y eliminado del servidor.")
+    del_pendiente(device_id)
+    print(f"JSON de {device_id} descargado y eliminado.")
 
     response = make_response(contenido)
     response.headers['Content-Disposition'] = f'attachment; filename=users_{device_id}.json'
     response.headers['Content-Type'] = 'application/json; charset=utf-8'
     return response
 
+# ── Descargar fichadas ─────────────────────────────────────
+@app.route('/descargar/<device_id>')
+@login_required
+def descargar(device_id):
+    info = get_reloj(device_id)
+    if not info:
+        return 'Reloj no encontrado', 404
 
-# ── API: ping desde huellahora ─────────────────────────────
-@app.route('/api/ping', methods=['POST'])
-def ping():
-    device_id = request.form.get('device_id')
-    nombre    = request.form.get('nombre', device_id)
-    if not device_id:
-        return jsonify({'error': 'device_id requerido'}), 400
+    contenido = info.get('contenido', '')
+    info['contenido'] = ''
+    save_reloj(device_id, info)
 
-    if device_id not in relojes:
-        relojes[device_id] = {'nombre': nombre, 'contenido': '', 'ultima_actualizacion': '---'}
-
-    relojes[device_id]['ultimo_ping'] = datetime.now(ARG).isoformat()
-    relojes[device_id]['nombre'] = nombre
-    return jsonify({'ok': True}), 200
-
-
-# ── API: recibir archivo .dat de backup ────────────────────
-@app.route('/api/subir_dat', methods=['POST'])
-def subir_dat():
-    device_id = request.form.get('device_id')
-    if not device_id:
-        return jsonify({'error': 'device_id requerido'}), 400
-    if 'archivo' not in request.files:
-        return jsonify({'error': 'archivo requerido'}), 400
-
-    archivo = request.files['archivo']
-    contenido = archivo.read().decode('utf-8', errors='replace')
-    if device_id not in relojes:
-        relojes[device_id] = {'nombre': device_id, 'contenido': '', 'ultima_actualizacion': '---'}
-    relojes[device_id]['dat_backup'] = contenido
-    print(f"Backup .dat recibido de {device_id}")
-    return jsonify({'ok': True}), 200
-
+    response = make_response(contenido)
+    response.headers['Content-Disposition'] = f'attachment; filename=aramis_GN_{device_id}.dat'
+    response.headers['Content-Type'] = 'text/plain; charset=utf-8'
+    print(f"Fichadas de {device_id} descargadas y puestas en cero.")
+    return response
 
 # ── Descargar backup .dat ──────────────────────────────────
 @app.route('/backup/<device_id>')
 @login_required
 def backup(device_id):
-    if device_id not in relojes:
+    info = get_reloj(device_id)
+    if not info:
         return 'Reloj no encontrado', 404
-    contenido = relojes[device_id].get('dat_backup', '')
+
+    contenido = info.get('dat_backup', '')
     if not contenido:
         return 'Sin backup disponible', 404
+
     response = make_response(contenido)
     response.headers['Content-Disposition'] = f'attachment; filename=aramis_{device_id}.dat'
     response.headers['Content-Type'] = 'text/plain; charset=utf-8'
     return response
 
 if __name__ == '__main__':
-    app.run(debug=False, host='0.0.0.0', port=5000)ost='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)

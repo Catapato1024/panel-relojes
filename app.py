@@ -45,15 +45,21 @@ def redis_cmd(*args):
 def redis_get(key):
     try:
         result = redis_cmd("GET", key)
-        if result:
+        if result is None:
+            return None
+        # result puede ser string o ya deserializado
+        if isinstance(result, str):
             return json.loads(result)
+        if isinstance(result, dict):
+            return result
         return None
     except Exception as e:
-        print(f"Redis GET error: {e}")
+        print(f"Redis GET error: {e} result={result}")
         return None
 
 def redis_set(key, value):
     try:
+        # Guardar como string JSON
         redis_cmd("SET", key, json.dumps(value))
     except Exception as e:
         print(f"Redis SET error: {e}")

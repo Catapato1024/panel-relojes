@@ -120,12 +120,19 @@ def index():
     for device_id in todos_ids:
         info = get_reloj(device_id)
         try:
-            ultimo_ping = datetime.fromisoformat(info['ultimo_ping'])
-            if ultimo_ping.tzinfo is None:
-                ultimo_ping = ultimo_ping.replace(tzinfo=ARG)
-            diff = (ahora - ultimo_ping).total_seconds()
-            online = diff < 120
-        except Exception:
+            ultimo_ping_str = info.get('ultimo_ping', '')
+            if not ultimo_ping_str:
+                online = False
+            else:
+                ultimo_ping = datetime.fromisoformat(ultimo_ping_str)
+                # Convertir a UTC para comparar correctamente
+                if ultimo_ping.tzinfo is None:
+                    ultimo_ping = ultimo_ping.replace(tzinfo=timezone.utc)
+                ahora_utc = datetime.now(timezone.utc)
+                diff = (ahora_utc - ultimo_ping).total_seconds()
+                online = diff < 120
+        except Exception as e:
+            print(f"Error calculando online: {e}")
             online = False
 
         lista.append({
@@ -152,7 +159,7 @@ def ping():
 
     info = get_reloj(device_id)
     info['nombre'] = nombre
-    info['ultimo_ping'] = datetime.now(ARG).isoformat()
+    info['ultimo_ping'] = datetime.now(timezone.utc).isoformat()
     save_reloj(device_id, info)
 
     print(f"Ping recibido de {nombre} ({device_id})")
@@ -297,4 +304,4 @@ def estado_reloj():
     return jsonify({'ok': True}), 200
 
 if __name__ == '__main__':
-    app.run(debug=False, host='0.0.0.0', port=5000)='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=5000)

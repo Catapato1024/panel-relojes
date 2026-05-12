@@ -139,7 +139,7 @@ def index():
             'tiene_backup': bool(info.get('dat_backup'))
         })
 
-    lista.sort(key=lambda x: (x['online'], x['huellas_pendientes']), reverse=True)
+    lista.sort(key=lambda x: (x['remoto_online'], x['huellas_pendientes']), reverse=True)
     return render_template('index.html', relojes=lista)
 
 # ── API: ping ──────────────────────────────────────────────

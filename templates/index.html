@@ -138,6 +138,7 @@
                     <th>Huellas</th>
                     <th>Última actualización</th>
                     <th>Archivo</th>
+                    <th>Backup</th>
                 </tr>
             </thead>
             <tbody>
@@ -171,6 +172,13 @@
                     </td>
                     <td>
                         <a href="/descargar/{{ r.device_id }}" class="btn-descargar">⬇ Descargar</a>
+                    </td>
+                    <td>
+                        {% if r.tiene_backup %}
+                        <a href="/backup/{{ r.device_id }}" class="btn-descargar" style="background:#2e7d32;">⬇ Backup</a>
+                        {% else %}
+                        <span style="color:#ccc;font-size:12px;">—</span>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endfor %}

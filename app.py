@@ -174,19 +174,21 @@ def ping():
         return jsonify({'error': 'device_id requerido'}), 400
 
     # Debug Redis directo
-    test_result = redis_cmd("SET", "test_key", "test_value")
-    read_result = redis_cmd("GET", "test_key")
-    print(f"Redis test SET: {test_result}, GET: {read_result}")
-    print(f"REDIS_URL: {REDIS_URL}")
-    print(f"REDIS_TOKEN primeros 20 chars: {REDIS_TOKEN[:20] if REDIS_TOKEN else 'NONE'}")
+    test_dict = {"nombre": "test", "ping": "123"}
+    redis_cmd("SET", "test_dict", json.dumps(test_dict))
+    raw = redis_cmd("GET", "test_dict")
+    print(f"Raw GET result type: {type(raw)}, value: {repr(raw)}")
 
-    info = get_reloj(device_id)
+    info = get_reloj(device_id) or {}
     info['nombre'] = nombre
     info['ultimo_ping'] = datetime.now(timezone.utc).isoformat()
     save_reloj(device_id, info)
 
+    # Leer raw para ver qué devuelve
+    raw_reloj = redis_cmd("GET", f"reloj:{device_id}")
+    print(f"Raw reloj GET: type={type(raw_reloj)}, value={repr(raw_reloj)}")
     verificar = get_reloj(device_id)
-    print(f"Ping guardado. ultimo_ping en Redis: {verificar.get('ultimo_ping') if verificar else 'None'}")
+    print(f"get_reloj result: {verificar}")
 
     return jsonify({'ok': True}), 200
 

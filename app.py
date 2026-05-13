@@ -131,7 +131,7 @@ def index():
     lista = []
 
     keys = redis_keys('reloj:*')
-    device_ids = set(k.replace('reloj', '') for k in keys)
+    device_ids = set(k.replace('reloj:', '') for k in keys)
 
     pend_keys = redis_keys('pendiente:*')
     pend_ids = set(k.replace('pendiente:', '') for k in pend_keys)

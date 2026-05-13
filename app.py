@@ -157,7 +157,7 @@ def index():
 
         lista.append({
             'device_id': device_id,
-            'nombre': info.get('nombre', f'Reloj {device_id}'),
+            'nombre': info.get('nombre', f' {device_id}'),
             'ultima_actualizacion': info.get('ultima_actualizacion', '---'),
             'remoto_online': online,
             'reloj_online': info.get('reloj_online', False),

@@ -140,6 +140,7 @@
                     <th>Última actualización</th>
                     <th>Archivo</th>
                     <th>Backup</th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
@@ -187,6 +188,11 @@
                         {% else %}
                         <span style="color:#ccc;font-size:12px;">—</span>
                         {% endif %}
+                    </td>
+                    <td>
+                        <form method="POST" action="/eliminar/{{ r.device_id }}" onsubmit="return confirm('¿Eliminar reloj {{ r.nombre }}?')">
+                            <button type="submit" style="background:#e74c3c;color:white;border:none;padding:6px 10px;border-radius:5px;cursor:pointer;font-size:13px;">✕</button>
+                        </form>
                     </td>
                 </tr>
                 {% endfor %}

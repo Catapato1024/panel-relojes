@@ -29,7 +29,6 @@ def get_headers():
     return REDIS_HEADERS
 
 def redis_cmd(*args):
-    """Ejecuta un comando Redis via Upstash REST API."""
     try:
         r = http_requests.post(
             REDIS_URL,
@@ -127,7 +126,6 @@ def logout():
 @app.route('/')
 @login_required
 def index():
-    ahora = datetime.now(ARG)
     lista = []
 
     keys = redis_keys('reloj:*')
@@ -145,7 +143,6 @@ def index():
                 online = False
             else:
                 ultimo_ping = datetime.fromisoformat(ultimo_ping_str)
-                # Convertir a UTC para comparar correctamente
                 if ultimo_ping.tzinfo is None:
                     ultimo_ping = ultimo_ping.replace(tzinfo=timezone.utc)
                 ahora_utc = datetime.now(timezone.utc)
@@ -157,7 +154,7 @@ def index():
 
         lista.append({
             'device_id': device_id,
-            'nombre': info.get('nombre', f' {device_id}'),
+            'nombre': info.get('nombre', f'Reloj {device_id}'),
             'ultima_actualizacion': info.get('ultima_actualizacion', '---'),
             'remoto_online': online,
             'reloj_online': info.get('reloj_online', False),
@@ -184,7 +181,6 @@ def ping():
 
     verificar = get_reloj(device_id)
     print(f"Ping OK - ultimo_ping: {verificar.get('ultimo_ping') if verificar else 'ERROR'}")
-
     return jsonify({'ok': True}), 200
 
 # ── API: recibir fichadas ──────────────────────────────────
@@ -245,7 +241,7 @@ def subir_json():
     try:
         json.loads(contenido)
     except Exception:
-        return jsonify({'error': 'JSON inválido'}), 400
+        return jsonify({'error': 'JSON invalido'}), 400
 
     save_pendiente(device_id, contenido)
     print(f"JSON subido para device_id {device_id}")
@@ -307,6 +303,14 @@ def backup(device_id):
     response.headers['Content-Type'] = 'text/plain; charset=utf-8'
     return response
 
+# ── Eliminar reloj ─────────────────────────────────────────
+@app.route('/eliminar/<device_id>', methods=['POST'])
+@login_required
+def eliminar(device_id):
+    redis_del(f"reloj:{device_id}")
+    redis_del(f"pendiente:{device_id}")
+    print(f"Reloj {device_id} eliminado del panel.")
+    return redirect(url_for('index'))
 
 # ── API: estado del reloj ZKTeco ───────────────────────────
 @app.route('/api/estado_reloj', methods=['POST'])
